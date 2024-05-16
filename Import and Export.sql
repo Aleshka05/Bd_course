@@ -1,0 +1,58 @@
+CREATE OR REPLACE FUNCTION EXPORT_LOTS_TO_JSON_FILE(FILE_PATH TEXT)
+RETURNS VOID AS
+$$
+DECLARE
+ JSON_DATA JSON;
+BEGIN
+ BEGIN
+   SELECT JSON_AGG(ROW_TO_JSON(Consultants)) INTO JSON_DATA FROM Consultants;
+   PERFORM PG_FILE_WRITE(FILE_PATH, JSON_DATA::TEXT,true);
+ EXCEPTION WHEN OTHERS THEN
+   RAISE 'Произошла ошибка: %', SQLERRM;
+ END;
+END;
+$$
+LANGUAGE PLPGSQL;
+
+SELECT EXPORT_LOTS_TO_JSON_FILE('D:\Games\test.json');
+
+
+CREATE OR REPLACE FUNCTION IMPORT_CONSULTANTS_FROM_JSON_FILE(FILE_PATH TEXT)
+RETURNS VOID AS $$
+DECLARE 
+    FILE_CONTENT TEXT;
+    JSON_DATA JSON;
+    CONSULTANT_DATA JSON;
+BEGIN
+    BEGIN
+        FILE_CONTENT := pg_read_file(FILE_PATH, 0, 1000000000);
+    EXCEPTION WHEN OTHERS THEN
+        RAISE 'Файл не найден: %', FILE_PATH;
+    END;
+    
+    BEGIN
+        JSON_DATA := FILE_CONTENT::JSON;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE 'Некорректный JSON: %', SQLERRM;
+    END;
+    
+    FOR CONSULTANT_DATA IN SELECT * FROM json_array_elements(JSON_DATA)
+    LOOP
+        IF NOT (CONSULTANT_DATA::jsonb ? 'id' AND CONSULTANT_DATA::jsonb ? 'Name' AND CONSULTANT_DATA::jsonb ? 'Surname' AND CONSULTANT_DATA::jsonb ? 'Email') THEN
+            CONTINUE;
+        END IF;
+        
+        INSERT INTO Consultants (ID, Name, Surname, Email)
+        VALUES (
+            (CONSULTANT_DATA->>'id')::INTEGER,
+            CONSULTANT_DATA->>'Name',
+            CONSULTANT_DATA->>'Surname',
+            CONSULTANT_DATA->>'Email'
+        );
+    END LOOP;
+    
+END;
+$$ LANGUAGE PLPGSQL;
+SELECT * FROM IMPORT_CONSULTANTS_FROM_JSON_FILE('D:\Games\twst.json');
+
+select * from consultants
